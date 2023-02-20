@@ -2,6 +2,7 @@ package xhttpclient
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -103,6 +104,10 @@ func (xc *XClient) Do(successV, wrongV any, xReq *XRequestBuilder) (resp *http.R
 }
 
 func (xc *XClient) DoOnceWithBodyCodec(bodyCodec BodyCodec, successV, wrongV any, xReq *XRequestBuilder) (resp *http.Response, respBody []byte, err error) {
+	if successV == nil {
+		return nil, nil, errors.New("'successV' must not be nil")
+	}
+
 	var (
 		req *http.Request
 		bc  = bodyCodec.Get()
@@ -131,16 +136,22 @@ func (xc *XClient) DoOnceWithBodyCodec(bodyCodec BodyCodec, successV, wrongV any
 	}
 	switch {
 	case isWrong(bc, resp):
+		if wrongV == nil {
+			return resp, respBody, decodeErrorF(resp)
+		}
 		if err := decodeWrong(bc, bytes.NewBuffer(respBody), wrongV); err != nil {
-			return resp, respBody, decodeErrorF(resp.StatusCode)
+			return resp, respBody, decodeErrorF(resp)
 		}
 	case isSuccessful(bc, resp):
 		if err := bc.Decode(bytes.NewBuffer(respBody), successV); err != nil {
-			return resp, respBody, decodeErrorF(resp.StatusCode)
+			return resp, respBody, decodeErrorF(resp)
 		}
 	default:
+		if wrongV == nil {
+			return resp, respBody, decodeErrorF(resp)
+		}
 		if err := bc.Decode(bytes.NewBuffer(respBody), wrongV); err != nil {
-			return resp, respBody, decodeErrorF(resp.StatusCode)
+			return resp, respBody, decodeErrorF(resp)
 		}
 	}
 
@@ -217,6 +228,6 @@ func isSuccessful(bc BodyCodec, resp *http.Response) bool {
 	}
 }
 
-func decodeErrorF(statusCode int) error {
-	return fmt.Errorf("unexpected error (HTTP status: %s[%d])", http.StatusText(statusCode), statusCode)
+func decodeErrorF(resp *http.Response) error {
+	return fmt.Errorf("unexpected error: URL: %s (%d %s)", resp.Request.URL, resp.StatusCode, http.StatusText(resp.StatusCode))
 }

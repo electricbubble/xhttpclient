@@ -2,8 +2,6 @@ package xhttpclient
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	urlpkg "net/url"
@@ -58,20 +56,14 @@ func TestXClient_Do_FormUrlencoded(t *testing.T) {
 	formData.Set("tel", tel)
 	formData.Set("email", email)
 
-	var (
-		successV Response
-		wrongV   map[string]any
-	)
-	resp, respBody, err := cli.DoOnceWithBodyCodec(BodyCodecFormUrlencodedAndJSON, &successV, &wrongV,
+	var successV Response
+	_, respBody, err := cli.DoOnceWithBodyCodec(BodyCodecFormUrlencodedAndJSON, &successV, nil,
 		NewPost().
 			Path("/post").
 			Body(formData),
 	)
 	if err != nil {
 		t.Fatalf("%s\n%s", err, respBody)
-	}
-	if len(wrongV) != 0 {
-		t.Fatal(fmt.Errorf("wrong response (HTTP status: %s(%d)): %+v", http.StatusText(resp.StatusCode), resp.StatusCode, wrongV))
 	}
 
 	switch {
@@ -89,12 +81,7 @@ func TestXClient_Do_FormUrlencoded(t *testing.T) {
 		t.Fatalf("header.ContentLength = %s, want %v", successV.Headers.ContentLength, strconv.Itoa(len([]byte(formData.Encode()))))
 	}
 
-	bs, err := json.MarshalIndent(successV, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Log("successV\n", string(bs))
-
+	t.Logf("raw response: 👇\n%s", respBody)
 }
 
 func TestXClient_Do_Multipart(t *testing.T) {
@@ -129,20 +116,14 @@ func TestXClient_Do_Multipart(t *testing.T) {
 		WriteWithFile("f1", tmpTestdata)
 	contentType := mw.FormDataContentType()
 
-	var (
-		successV Response
-		wrongV   map[string]any
-	)
-	resp, respBody, err := cli.DoOnceWithBodyCodec(BodyCodecMultipart, &successV, &wrongV,
+	var successV Response
+	_, respBody, err := cli.DoOnceWithBodyCodec(BodyCodecMultipart, &successV, nil,
 		NewPost().
 			Path("/anything").
 			Body(mw),
 	)
 	if err != nil {
 		t.Fatalf("%s\n%s", err, respBody)
-	}
-	if len(wrongV) != 0 {
-		t.Fatal(fmt.Errorf("wrong response (HTTP status: %s(%d)): %+v", http.StatusText(resp.StatusCode), resp.StatusCode, wrongV))
 	}
 
 	switch {
@@ -171,31 +152,25 @@ func TestXClient_Do_Multipart(t *testing.T) {
 		t.Fatalf("header.ContentLength = %s, want %v", successV.Headers.ContentLength, strconv.Itoa(buf.Len()))
 	}
 
-	bs, err := json.MarshalIndent(successV, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Log("successV\n", string(bs))
+	t.Logf("raw response: 👇\n%s", respBody)
 }
 
 func TestXClient_Do_gzip(t *testing.T) {
+	type Response struct {
+		Gzipped bool `json:"gzipped"`
+	}
+
 	cli := NewClient().BaseURL("https://httpbin.org")
 
-	var (
-		successV any
-		wrongV   map[string]any
-	)
-	resp, respBody, err := cli.Do(&successV, &wrongV, NewGet().Path("/gzip"))
+	var successV Response
+	_, respBody, err := cli.Do(&successV, nil, NewGet().Path("/gzip"))
 	if err != nil {
 		t.Fatalf("%s\n%s", err, respBody)
 	}
-	if len(wrongV) != 0 {
-		t.Fatal(fmt.Errorf("wrong response (HTTP status: %s(%d)): %+v", http.StatusText(resp.StatusCode), resp.StatusCode, wrongV))
+
+	if !successV.Gzipped {
+		t.Fatalf("gzipped = %t, want %t", successV.Gzipped, true)
 	}
 
-	bs, err := json.MarshalIndent(successV, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Log("successV\n", string(bs))
+	t.Logf("raw response: 👇\n%s", respBody)
 }
