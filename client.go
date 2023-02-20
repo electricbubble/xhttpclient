@@ -98,11 +98,11 @@ func (xc *XClient) SetBasicAuth(username, password string) *XClient {
 	return xc.SetHeader("Authorization", "Basic "+basicAuth(username, password))
 }
 
-func (xc *XClient) Do(successV, wrongV any, xReq *XRequestBuilder) (resp *http.Response, err error) {
+func (xc *XClient) Do(successV, wrongV any, xReq *XRequestBuilder) (resp *http.Response, respBody []byte, err error) {
 	return xc.DoOnceWithBodyCodec(xc.bodyCodecPool, successV, wrongV, xReq)
 }
 
-func (xc *XClient) DoOnceWithBodyCodec(bodyCodec BodyCodec, successV, wrongV any, xReq *XRequestBuilder) (resp *http.Response, err error) {
+func (xc *XClient) DoOnceWithBodyCodec(bodyCodec BodyCodec, successV, wrongV any, xReq *XRequestBuilder) (resp *http.Response, respBody []byte, err error) {
 	var (
 		req *http.Request
 		bc  = bodyCodec.Get()
@@ -111,7 +111,7 @@ func (xc *XClient) DoOnceWithBodyCodec(bodyCodec BodyCodec, successV, wrongV any
 
 	req, resp, err = xc.do(bc, xReq)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer func() {
 		io.Copy(io.Discard, resp.Body)
@@ -123,25 +123,24 @@ func (xc *XClient) DoOnceWithBodyCodec(bodyCodec BodyCodec, successV, wrongV any
 	}
 
 	if resp.StatusCode == http.StatusNoContent {
-		return resp, nil
+		return resp, nil, nil
 	}
 
-	rbs, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return resp, fmt.Errorf("copy response body: %w", err)
+	if respBody, err = io.ReadAll(resp.Body); err != nil {
+		return resp, nil, fmt.Errorf("copy response body: %w", err)
 	}
 	switch {
 	case isWrong(bc, resp):
-		if err := decodeWrong(bc, bytes.NewBuffer(rbs), wrongV); err != nil {
-			return resp, decodeErrorF(resp.StatusCode, rbs)
+		if err := decodeWrong(bc, bytes.NewBuffer(respBody), wrongV); err != nil {
+			return resp, respBody, decodeErrorF(resp.StatusCode)
 		}
 	case isSuccessful(bc, resp):
-		if err := bc.Decode(bytes.NewBuffer(rbs), successV); err != nil {
-			return resp, decodeErrorF(resp.StatusCode, rbs)
+		if err := bc.Decode(bytes.NewBuffer(respBody), successV); err != nil {
+			return resp, respBody, decodeErrorF(resp.StatusCode)
 		}
 	default:
-		if err := bc.Decode(bytes.NewBuffer(rbs), wrongV); err != nil {
-			return resp, decodeErrorF(resp.StatusCode, rbs)
+		if err := bc.Decode(bytes.NewBuffer(respBody), wrongV); err != nil {
+			return resp, respBody, decodeErrorF(resp.StatusCode)
 		}
 	}
 
@@ -218,6 +217,6 @@ func isSuccessful(bc BodyCodec, resp *http.Response) bool {
 	}
 }
 
-func decodeErrorF(statusCode int, respBody []byte) error {
-	return fmt.Errorf("unexpected error (HTTP status: %s[%d]): raw response:\n%s", http.StatusText(statusCode), statusCode, respBody)
+func decodeErrorF(statusCode int) error {
+	return fmt.Errorf("unexpected error (HTTP status: %s[%d])", http.StatusText(statusCode), statusCode)
 }

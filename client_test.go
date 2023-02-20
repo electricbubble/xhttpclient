@@ -27,7 +27,7 @@ func BenchmarkXClient_Do(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := cli.Do(nil, nil, NewGet().Path(ts.URL))
+		_, _, err := cli.Do(nil, nil, NewGet().Path(ts.URL))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -62,13 +62,13 @@ func TestXClient_Do_FormUrlencoded(t *testing.T) {
 		successV Response
 		wrongV   map[string]any
 	)
-	resp, err := cli.DoOnceWithBodyCodec(BodyCodecFormUrlencodedAndJSON, &successV, &wrongV,
+	resp, respBody, err := cli.DoOnceWithBodyCodec(BodyCodecFormUrlencodedAndJSON, &successV, &wrongV,
 		NewPost().
 			Path("/post").
 			Body(formData),
 	)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%s\n%s", err, respBody)
 	}
 	if len(wrongV) != 0 {
 		t.Fatal(fmt.Errorf("wrong response (HTTP status: %s(%d)): %+v", http.StatusText(resp.StatusCode), resp.StatusCode, wrongV))
@@ -133,13 +133,13 @@ func TestXClient_Do_Multipart(t *testing.T) {
 		successV Response
 		wrongV   map[string]any
 	)
-	resp, err := cli.DoOnceWithBodyCodec(BodyCodecMultipart, &successV, &wrongV,
+	resp, respBody, err := cli.DoOnceWithBodyCodec(BodyCodecMultipart, &successV, &wrongV,
 		NewPost().
 			Path("/anything").
 			Body(mw),
 	)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%s\n%s", err, respBody)
 	}
 	if len(wrongV) != 0 {
 		t.Fatal(fmt.Errorf("wrong response (HTTP status: %s(%d)): %+v", http.StatusText(resp.StatusCode), resp.StatusCode, wrongV))
@@ -185,9 +185,9 @@ func TestXClient_Do_gzip(t *testing.T) {
 		successV any
 		wrongV   map[string]any
 	)
-	resp, err := cli.Do(&successV, &wrongV, NewGet().Path("/gzip"))
+	resp, respBody, err := cli.Do(&successV, &wrongV, NewGet().Path("/gzip"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%s\n%s", err, respBody)
 	}
 	if len(wrongV) != 0 {
 		t.Fatal(fmt.Errorf("wrong response (HTTP status: %s(%d)): %+v", http.StatusText(resp.StatusCode), resp.StatusCode, wrongV))
