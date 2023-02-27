@@ -1,13 +1,15 @@
-# X-HTTP-Client
+package xhttpclient
 
-## Install
-```shell
-go get github.com/electricbubble/xhttpclient
-```
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+)
 
-## Usage
-
-```go
 func ExampleXClient_Do() {
 	type Response struct {
 		Args struct {
@@ -137,5 +139,3 @@ func ExampleXClient_Do_download() {
 	// Output:
 	// MIT License
 }
-
-```
