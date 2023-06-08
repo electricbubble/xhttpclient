@@ -137,21 +137,21 @@ func (xc *XClient) DoOnceWithBodyCodec(bodyCodec BodyCodec, successV, wrongV any
 	switch {
 	case isWrong(bc, resp):
 		if wrongV == nil {
-			return resp, respBody, decodeErrorF(resp)
+			return resp, respBody, wrapDecodeError(nil, resp)
 		}
 		if err := decodeWrong(bc, bytes.NewBuffer(respBody), wrongV); err != nil {
-			return resp, respBody, decodeErrorF(resp)
+			return resp, respBody, wrapDecodeError(err, resp)
 		}
 	case isSuccessful(bc, resp):
 		if err := bc.Decode(bytes.NewBuffer(respBody), successV); err != nil {
-			return resp, respBody, decodeErrorF(resp)
+			return resp, respBody, wrapDecodeError(err, resp)
 		}
 	default:
 		if wrongV == nil {
-			return resp, respBody, decodeErrorF(resp)
+			return resp, respBody, wrapDecodeError(nil, resp)
 		}
 		if err := bc.Decode(bytes.NewBuffer(respBody), wrongV); err != nil {
-			return resp, respBody, decodeErrorF(resp)
+			return resp, respBody, wrapDecodeError(err, resp)
 		}
 	}
 
@@ -228,6 +228,9 @@ func isSuccessful(bc BodyCodec, resp *http.Response) bool {
 	}
 }
 
-func decodeErrorF(resp *http.Response) error {
+func wrapDecodeError(err error, resp *http.Response) error {
+	if err != nil {
+		return fmt.Errorf("unexpected error: URL: %s (%d %s): %w", resp.Request.URL, resp.StatusCode, http.StatusText(resp.StatusCode), err)
+	}
 	return fmt.Errorf("unexpected error: URL: %s (%d %s)", resp.Request.URL, resp.StatusCode, http.StatusText(resp.StatusCode))
 }
