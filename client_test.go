@@ -20,12 +20,13 @@ func BenchmarkXClient_Do(b *testing.B) {
 	)
 	defer ts.Close()
 	cli := NewClient()
+	var tmpMsg any
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, _, err := cli.Do(nil, nil, NewGet().Path(ts.URL))
+		_, _, err := cli.Do(&tmpMsg, nil, NewGet().Path(ts.URL))
 		if err != nil {
 			b.Fatal(err)
 		}

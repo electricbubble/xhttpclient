@@ -2,18 +2,19 @@ package xhttpclient
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"net/textproto"
 	"time"
 )
 
 type XClient struct {
-	baseURL string
-	header  http.Header
+	baseURL    string
+	reqTimeout time.Duration
+	header     http.Header
 
 	doer          *http.Client
 	bodyCodecPool BodyCodec
@@ -44,23 +45,8 @@ func (xc *XClient) WithBodyCodec(bodyCodec BodyCodec) *XClient {
 	return xc
 }
 
-func (xc *XClient) WithTimeout(d time.Duration) *XClient {
-	xc.doer.Timeout = d
-	return xc
-}
-
-func (xc *XClient) WithJar(jar *cookiejar.Jar) *XClient {
-	xc.doer.Jar = jar
-	return xc
-}
-
-func (xc *XClient) WithCheckRedirect(fn func(req *http.Request, via []*http.Request) error) *XClient {
-	xc.doer.CheckRedirect = fn
-	return xc
-}
-
-func (xc *XClient) WithTransport(transport http.RoundTripper) *XClient {
-	xc.doer.Transport = transport
+func (xc *XClient) WithRequestTimeout(d time.Duration) *XClient {
+	xc.reqTimeout = d
 	return xc
 }
 
@@ -167,9 +153,11 @@ func (xc *XClient) DoWithRaw(xReq *XRequestBuilder) (req *http.Request, resp *ht
 
 func (xc *XClient) do(bc BodyCodec, xReq *XRequestBuilder) (req *http.Request, resp *http.Response, err error) {
 	xc.initXReq(xReq)
-	if req, err = xReq.build(bc); err != nil {
+	var cancel context.CancelFunc
+	if req, cancel, err = xReq.build(bc); err != nil {
 		return
 	}
+	defer cancel()
 
 	if bc, ok := bc.(BodyCodecOnSend); ok {
 		bc.OnSend(req)
@@ -184,6 +172,7 @@ func (xc *XClient) do(bc BodyCodec, xReq *XRequestBuilder) (req *http.Request, r
 
 func (xc *XClient) initXReq(xReq *XRequestBuilder) {
 	xReq.baseURL = xc.baseURL
+	xReq.timeout = xc.reqTimeout
 
 	cliHdrLen, reqHdrLen := len(xc.header), len(xReq.header)
 	switch {

@@ -10,7 +10,7 @@ import (
 func DefaultClient() *http.Client {
 	return &http.Client{
 		Transport: DefaultTransport(),
-		Timeout:   30 * time.Second,
+		Timeout:   0,
 	}
 }
 
