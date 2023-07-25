@@ -2,10 +2,12 @@ package xhttpclient
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net/http"
 	urlpkg "net/url"
 	"path"
 	"sync"
@@ -64,4 +66,15 @@ func randomBoundary() string {
 		panic(err)
 	}
 	return fmt.Sprintf("%x", buf[:])
+}
+
+func wrapCancelAndCloseRespBody(cancel context.CancelFunc, resp *http.Response) context.CancelFunc {
+	if resp == nil {
+		return cancel
+	}
+	return func() {
+		cancel()
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}
 }

@@ -2,16 +2,19 @@ package xhttpclient
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/textproto"
+	"time"
 )
 
 type XClient struct {
-	baseURL string
-	header  http.Header
+	baseURL    string
+	header     http.Header
+	reqTimeout time.Duration
 
 	doer          *http.Client
 	bodyCodecPool BodyCodec
@@ -39,6 +42,11 @@ func (xc *XClient) WithBodyCodecJSON() *XClient {
 
 func (xc *XClient) WithBodyCodec(bodyCodec BodyCodec) *XClient {
 	xc.bodyCodecPool = bodyCodec
+	return xc
+}
+
+func (xc *XClient) WithRequestTimeout(d time.Duration) *XClient {
+	xc.reqTimeout = d
 	return xc
 }
 
@@ -87,19 +95,18 @@ func (xc *XClient) DoOnceWithBodyCodec(bodyCodec BodyCodec, successV, wrongV any
 	}
 
 	var (
-		req *http.Request
-		bc  = bodyCodec.Get()
+		req    *http.Request
+		cancel context.CancelFunc
+		bc     = bodyCodec.Get()
 	)
 	defer bodyCodec.Put(bc)
 
-	req, resp, err = xc.do(bc, xReq)
+	req, resp, cancel, err = xc.do(bc, xReq)
 	if err != nil {
+		cancel()
 		return nil, nil, err
 	}
-	defer func() {
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-	}()
+	defer wrapCancelAndCloseRespBody(cancel, resp)()
 
 	if bc, ok := bc.(BodyCodecOnReceive); ok {
 		bc.OnReceive(req, resp)
@@ -136,16 +143,16 @@ func (xc *XClient) DoOnceWithBodyCodec(bodyCodec BodyCodec, successV, wrongV any
 	return
 }
 
-func (xc *XClient) DoWithRaw(xReq *XRequestBuilder) (req *http.Request, resp *http.Response, err error) {
+func (xc *XClient) DoWithRaw(xReq *XRequestBuilder) (req *http.Request, resp *http.Response, cancel context.CancelFunc, err error) {
 	codec := xc.bodyCodecPool.Get()
 	defer xc.bodyCodecPool.Put(codec)
-	req, resp, err = xc.do(codec, xReq)
-	return
+	req, resp, cancel, err = xc.do(codec, xReq)
+	return req, resp, wrapCancelAndCloseRespBody(cancel, resp), err
 }
 
-func (xc *XClient) do(bc BodyCodec, xReq *XRequestBuilder) (req *http.Request, resp *http.Response, err error) {
+func (xc *XClient) do(bc BodyCodec, xReq *XRequestBuilder) (req *http.Request, resp *http.Response, cancel context.CancelFunc, err error) {
 	xc.initXReq(xReq)
-	if req, err = xReq.build(bc); err != nil {
+	if req, cancel, err = xReq.build(bc); err != nil {
 		return
 	}
 
@@ -162,6 +169,9 @@ func (xc *XClient) do(bc BodyCodec, xReq *XRequestBuilder) (req *http.Request, r
 
 func (xc *XClient) initXReq(xReq *XRequestBuilder) {
 	xReq.baseURL = xc.baseURL
+	if xReq.timeout <= 0 {
+		xReq.timeout = xc.reqTimeout
+	}
 
 	cliHdrLen, reqHdrLen := len(xc.header), len(xReq.header)
 	switch {

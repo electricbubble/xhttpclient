@@ -262,11 +262,12 @@ func TestXRequestBuilder_Build_URL_Query(t *testing.T) {
 			initTestXReq(tt.base, tt.xReq)
 			bc := tt.base.codec.Get()
 			defer tt.base.codec.Put(bc)
-			req, err := tt.xReq.build(bc)
+			req, cancel, err := tt.xReq.build(bc)
 			if err != nil {
 				t.Errorf("xReq.build() = %v; want nil", err)
 				return
 			}
+			defer cancel()
 
 			if s, _, _ := strings.Cut(req.URL.String(), "?"); s != tt.want.urlNoQuery {
 				t.Errorf("req.URL(no query) = %s, want %v", s, tt.want.urlNoQuery)
@@ -376,11 +377,12 @@ func TestXRequestBuilder_Build_Host(t *testing.T) {
 			initTestXReq(tt.base, tt.xReq)
 			bc := tt.base.codec.Get()
 			defer tt.base.codec.Put(bc)
-			req, err := tt.xReq.build(bc)
+			req, cancel, err := tt.xReq.build(bc)
 			if err != nil {
 				t.Errorf("xReq.build() = %v; want nil", err)
 				return
 			}
+			defer cancel()
 
 			if req.Host != tt.wantHost {
 				t.Errorf("req.Host = %v, want %v", req.Host, tt.wantHost)
@@ -474,11 +476,12 @@ func TestXRequestBuilder_Build_BasicAuth(t *testing.T) {
 			initTestXReq(tt.base, tt.xReq)
 			bc := tt.base.codec.Get()
 			defer tt.base.codec.Put(bc)
-			req, err := tt.xReq.build(bc)
+			req, cancel, err := tt.xReq.build(bc)
 			if err != nil {
 				t.Errorf("xReq.build() = %v; want nil", err)
 				return
 			}
+			defer cancel()
 
 			username, password, ok := req.BasicAuth()
 			if ok != tt.want.ok || username != tt.want.username || password != tt.want.password {
@@ -585,11 +588,12 @@ func TestXRequestBuilder_Build_GetBody(t *testing.T) {
 			initTestXReq(tt.base, tt.xReq)
 			bc := tt.base.codec.Get()
 			defer tt.base.codec.Put(bc)
-			req, err := tt.xReq.build(bc)
+			req, cancel, err := tt.xReq.build(bc)
 			if err != nil {
 				t.Errorf("xReq.build() = %v; want nil", err)
 				return
 			}
+			defer cancel()
 
 			if req.Body == nil {
 				t.Error("Body = nil")
