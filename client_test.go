@@ -67,18 +67,22 @@ func TestXClient_Do_FormUrlencoded(t *testing.T) {
 		t.Fatalf("%s\n%s", err, respBody)
 	}
 
-	switch {
-	case successV.Form.Name != name:
+	if successV.Form.Name != name {
 		t.Fatalf("form.name = %s, want %v", successV.Form.Name, name)
-	case successV.Form.Tel != tel:
+	}
+	if successV.Form.Tel != tel {
 		t.Fatalf("form.tel = %s, want %v", successV.Form.Tel, tel)
-	case successV.Form.Email != email:
+	}
+	if successV.Form.Email != email {
 		t.Fatalf("form.email = %s, want %v", successV.Form.Email, email)
-	case successV.Headers.ContentType != ContentTypeValueFormUrlencoded:
+	}
+	if successV.Headers.ContentType != ContentTypeValueFormUrlencoded {
 		t.Fatalf("header.ContentType = %s, want %v", successV.Headers.ContentType, ContentTypeValueFormUrlencoded)
-	case successV.Headers.Accept != ContentTypeValueJSON:
+	}
+	if successV.Headers.Accept != ContentTypeValueJSON {
 		t.Fatalf("header.Accept = %s, want %v", successV.Headers.Accept, ContentTypeValueJSON)
-	case successV.Headers.ContentLength != strconv.Itoa(len([]byte(formData.Encode()))):
+	}
+	if successV.Headers.ContentLength != strconv.Itoa(len([]byte(formData.Encode()))) {
 		t.Fatalf("header.ContentLength = %s, want %v", successV.Headers.ContentLength, strconv.Itoa(len([]byte(formData.Encode()))))
 	}
 
@@ -127,16 +131,19 @@ func TestXClient_Do_Multipart(t *testing.T) {
 		t.Fatalf("%s\n%s", err, respBody)
 	}
 
-	switch {
-	case successV.Form.K1 != v1:
+	if successV.Form.K1 != v1 {
 		t.Fatalf("form.k1 = %s, want %v", successV.Form.K1, v1)
-	case successV.Form.K2 != v2:
+	}
+	if successV.Form.K2 != v2 {
 		t.Fatalf("form.k2 = %s, want %v", successV.Form.K2, v2)
-	case successV.Files.F1 != fContent:
+	}
+	if successV.Files.F1 != fContent {
 		t.Fatalf("files.f1 = %s, want %v", successV.Files.F1, fContent)
-	case successV.Headers.ContentType != contentType:
+	}
+	if successV.Headers.ContentType != contentType {
 		t.Fatalf("header.ContentType = %s, want %v", successV.Headers.ContentType, contentType)
-	case successV.Headers.Accept != ContentTypeValueJSON:
+	}
+	if successV.Headers.Accept != ContentTypeValueJSON {
 		t.Fatalf("header.Accept = %s, want %v", successV.Headers.Accept, ContentTypeValueJSON)
 	}
 

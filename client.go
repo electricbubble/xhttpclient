@@ -2,19 +2,16 @@ package xhttpclient
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/textproto"
-	"time"
 )
 
 type XClient struct {
-	baseURL    string
-	reqTimeout time.Duration
-	header     http.Header
+	baseURL string
+	header  http.Header
 
 	doer          *http.Client
 	bodyCodecPool BodyCodec
@@ -42,11 +39,6 @@ func (xc *XClient) WithBodyCodecJSON() *XClient {
 
 func (xc *XClient) WithBodyCodec(bodyCodec BodyCodec) *XClient {
 	xc.bodyCodecPool = bodyCodec
-	return xc
-}
-
-func (xc *XClient) WithRequestTimeout(d time.Duration) *XClient {
-	xc.reqTimeout = d
 	return xc
 }
 
@@ -153,11 +145,9 @@ func (xc *XClient) DoWithRaw(xReq *XRequestBuilder) (req *http.Request, resp *ht
 
 func (xc *XClient) do(bc BodyCodec, xReq *XRequestBuilder) (req *http.Request, resp *http.Response, err error) {
 	xc.initXReq(xReq)
-	var cancel context.CancelFunc
-	if req, cancel, err = xReq.build(bc); err != nil {
+	if req, err = xReq.build(bc); err != nil {
 		return
 	}
-	defer cancel()
 
 	if bc, ok := bc.(BodyCodecOnSend); ok {
 		bc.OnSend(req)
@@ -172,7 +162,6 @@ func (xc *XClient) do(bc BodyCodec, xReq *XRequestBuilder) (req *http.Request, r
 
 func (xc *XClient) initXReq(xReq *XRequestBuilder) {
 	xReq.baseURL = xc.baseURL
-	xReq.timeout = xc.reqTimeout
 
 	cliHdrLen, reqHdrLen := len(xc.header), len(xReq.header)
 	switch {

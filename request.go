@@ -10,12 +10,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 type XRequestBuilder struct {
-	ctx     context.Context
-	timeout time.Duration
+	ctx context.Context
 
 	method       string
 	baseURL      string
@@ -93,11 +91,6 @@ func (xr *XRequestBuilder) WithContext(ctx context.Context) *XRequestBuilder {
 	return xr
 }
 
-func (xr *XRequestBuilder) WithTimeout(d time.Duration) *XRequestBuilder {
-	xr.timeout = d
-	return xr
-}
-
 func (xr *XRequestBuilder) Header(header http.Header) *XRequestBuilder {
 	xr.header = header.Clone()
 	return xr
@@ -160,7 +153,7 @@ func (xr *XRequestBuilder) Body(body any) *XRequestBuilder {
 	return xr
 }
 
-func (xr *XRequestBuilder) build(bc BodyCodec) (req *http.Request, cancel context.CancelFunc, err error) {
+func (xr *XRequestBuilder) build(bc BodyCodec) (req *http.Request, err error) {
 	defer xr.free()
 
 	if xr.method == "" {
@@ -169,31 +162,21 @@ func (xr *XRequestBuilder) build(bc BodyCodec) (req *http.Request, cancel contex
 
 	u, err := xr.processingURL()
 	if err != nil {
-		return nil, nil, fmt.Errorf("build url: %w", err)
+		return nil, fmt.Errorf("build url: %w", err)
 	}
 
 	br, err := xr.processingBody(bc)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build body: %w", err)
+		return nil, fmt.Errorf("build body: %w", err)
 	}
 
-	ctx := xr.ctx
-	cancel = func() {}
-	switch {
-	case ctx == nil && xr.timeout <= 0:
+	if xr.ctx == nil {
 		req, err = http.NewRequest(xr.method, u.String(), br)
-	case ctx == nil && xr.timeout > 0:
-		ctx, cancel = context.WithTimeout(context.Background(), xr.timeout)
-		req, err = http.NewRequestWithContext(ctx, xr.method, u.String(), br)
-	case ctx != nil && xr.timeout <= 0:
-		req, err = http.NewRequestWithContext(ctx, xr.method, u.String(), br)
-	case ctx != nil && xr.timeout > 0:
-		ctx, cancel = context.WithTimeout(ctx, xr.timeout)
-		req, err = http.NewRequestWithContext(ctx, xr.method, u.String(), br)
+	} else {
+		req, err = http.NewRequestWithContext(xr.ctx, xr.method, u.String(), br)
 	}
 	if err != nil {
-		cancel()
-		return nil, nil, fmt.Errorf("build *http.Request: %w", err)
+		return nil, fmt.Errorf("build *http.Request: %w", err)
 	}
 
 	for k, v := range xr.header {
