@@ -115,17 +115,14 @@ func ExampleXClient_Do_upload() {
 func ExampleXClient_Do_download() {
 	cli := NewClient()
 
-	_, resp, err := cli.DoWithRaw(
+	_, resp, cancel, err := cli.DoWithRaw(
 		NewGet().
 			Path("https://raw.githubusercontent.com/electricbubble/xhttpclient/main/LICENSE"),
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() {
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-	}()
+	defer cancel()
 
 	var buf bytes.Buffer
 	if _, err = io.Copy(&buf, resp.Body); err != nil {
