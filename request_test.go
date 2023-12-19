@@ -392,6 +392,92 @@ func TestXRequestBuilder_Build_Host(t *testing.T) {
 	}
 }
 
+func TestXRequestBuilder_Build_Path(t *testing.T) {
+	tests := []struct {
+		name    string
+		xReq    *XRequestBuilder
+		baseURL string
+		want    string
+	}{
+		{
+			name:    "has_base_url_1",
+			xReq:    NewGet(),
+			baseURL: "http://127.0.0.1",
+			want:    "http://127.0.0.1",
+		},
+		{
+			name:    "has_base_url_2",
+			xReq:    NewGet(),
+			baseURL: "http://127.0.0.1/p2",
+			want:    "http://127.0.0.1/p2",
+		},
+		{
+			name:    "has_base_url_3",
+			xReq:    NewGet().Path("/p3"),
+			baseURL: "http://127.0.0.1/p2",
+			want:    "http://127.0.0.1/p2/p3",
+		},
+		{
+			name:    "has_base_url_4",
+			xReq:    NewGet().Path("p3/p4"),
+			baseURL: "http://127.0.0.1/p2",
+			want:    "http://127.0.0.1/p2/p3/p4",
+		},
+		{
+			name:    "has_base_url_5",
+			xReq:    NewGet().Path("p3/p4%2Fp5"),
+			baseURL: "http://127.0.0.1/p2",
+			want:    "http://127.0.0.1/p2/p3/p4%2Fp5",
+		},
+		{
+			name:    "no_base_url_1",
+			xReq:    NewGet().Path("http://localhost/"),
+			baseURL: "",
+			want:    "http://localhost/",
+		},
+		{
+			name:    "no_base_url_2",
+			xReq:    NewGet().Path("http://127.0.0.1/p2"),
+			baseURL: "",
+			want:    "http://127.0.0.1/p2",
+		},
+		{
+			name:    "no_base_url_3",
+			xReq:    NewGet().Path("http://127.0.0.1/p2", "/p3"),
+			baseURL: "",
+			want:    "http://127.0.0.1/p2/p3",
+		},
+		{
+			name:    "no_base_url_4",
+			xReq:    NewGet().Path("http://127.0.0.1/p2", "p3/p4"),
+			baseURL: "",
+			want:    "http://127.0.0.1/p2/p3/p4",
+		},
+		{
+			name:    "no_base_url_5",
+			xReq:    NewGet().Path("http://127.0.0.1/p2", "p3", "p4%2Fp5"),
+			baseURL: "",
+			want:    "http://127.0.0.1/p2/p3/p4%2Fp5",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.xReq.baseURL = tt.baseURL
+			u, err := tt.xReq.processingURL()
+			if err != nil {
+				t.Errorf("xReq.processingURL() = %v; want nil", err)
+				return
+			}
+
+			if u.String() != tt.want {
+				t.Errorf("u.String() = %v, want %v", u.String(), tt.want)
+				return
+			}
+		})
+	}
+}
+
 type testTypeBasicAuth struct {
 	username, password string
 	ok                 bool
