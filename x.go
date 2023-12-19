@@ -41,7 +41,7 @@ func joinPath(baseURL string, pathElements []string) (u *urlpkg.URL, err error) 
 		return nil, err
 	}
 
-	u = u.JoinPath(pu.Path)
+	u = u.JoinPath(pu.EscapedPath())
 	u.RawQuery = pu.RawQuery
 	return u, nil
 }
