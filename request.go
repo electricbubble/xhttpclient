@@ -1,294 +1,194 @@
 package xhttpclient
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	urlpkg "net/url"
-	"strconv"
-	"strings"
-	"sync"
+	"net/url"
+	"path"
 	"time"
 )
 
-type XRequestBuilder struct {
+type RequestBuilder interface {
+	Context(ctx context.Context) RequestBuilder
+	Timeout(timeout time.Duration) RequestBuilder
+	Path(elem ...string) RequestBuilder
+	Query(query url.Values) RequestBuilder
+	QuerySet(key, value string) RequestBuilder
+	QueryAdd(key, value string) RequestBuilder
+	Header(header http.Header) RequestBuilder
+	HeaderSet(key, value string) RequestBuilder
+	HeaderAdd(key, value string) RequestBuilder
+	HeaderSetBasicAuth(username, password string) RequestBuilder
+	Body(body any) RequestBuilder
+
+	build(enc Encoder, opts ...xRequestBuildOption) (req *http.Request, cancel context.CancelFunc, err error)
+}
+
+func NewGet() RequestBuilder     { return newRequestBuilder(http.MethodGet) }
+func NewHead() RequestBuilder    { return newRequestBuilder(http.MethodHead) }
+func NewPost() RequestBuilder    { return newRequestBuilder(http.MethodPost) }
+func NewPut() RequestBuilder     { return newRequestBuilder(http.MethodPut) }
+func NewPatch() RequestBuilder   { return newRequestBuilder(http.MethodPatch) }
+func NewDelete() RequestBuilder  { return newRequestBuilder(http.MethodDelete) }
+func NewConnect() RequestBuilder { return newRequestBuilder(http.MethodConnect) }
+func NewOptions() RequestBuilder { return newRequestBuilder(http.MethodOptions) }
+func NewTrace() RequestBuilder   { return newRequestBuilder(http.MethodTrace) }
+
+func newRequestBuilder(method string) *xRequestBuilder {
+	return &xRequestBuilder{
+		method: method,
+		m:      new(xRequestMutation),
+	}
+}
+
+var _ RequestBuilder = (*xRequestBuilder)(nil)
+
+type xRequestBuilder struct {
+	method  string
 	ctx     context.Context
 	timeout time.Duration
-
-	method       string
-	baseURL      string
-	pathElements []string
-	header       http.Header
-	query        urlpkg.Values
-	body         struct {
-		has bool
-		v   any
-	}
+	baseURL string
+	path    []string
+	q       xQuery
+	m       *xRequestMutation
 }
 
-var _xReqBuilderPool = sync.Pool{
-	New: func() any {
-		return new(XRequestBuilder)
-	},
-}
+type xRequestBuildOption func(r *xRequestBuilder)
 
-func NewGet() *XRequestBuilder {
-	xr := _xReqBuilderPool.Get().(*XRequestBuilder)
-	xr.method = http.MethodGet
-	return xr
-}
-
-func NewHead() *XRequestBuilder {
-	xr := _xReqBuilderPool.Get().(*XRequestBuilder)
-	xr.method = http.MethodHead
-	return xr
-}
-
-func NewPost() *XRequestBuilder {
-	xr := _xReqBuilderPool.Get().(*XRequestBuilder)
-	xr.method = http.MethodPost
-	return xr
-}
-
-func NewPut() *XRequestBuilder {
-	xr := _xReqBuilderPool.Get().(*XRequestBuilder)
-	xr.method = http.MethodPut
-	return xr
-}
-
-func NewPatch() *XRequestBuilder {
-	xr := _xReqBuilderPool.Get().(*XRequestBuilder)
-	xr.method = http.MethodPatch
-	return xr
-}
-
-func NewDelete() *XRequestBuilder {
-	xr := _xReqBuilderPool.Get().(*XRequestBuilder)
-	xr.method = http.MethodDelete
-	return xr
-}
-
-func NewConnect() *XRequestBuilder {
-	xr := _xReqBuilderPool.Get().(*XRequestBuilder)
-	xr.method = http.MethodConnect
-	return xr
-}
-
-func NewOptions() *XRequestBuilder {
-	xr := _xReqBuilderPool.Get().(*XRequestBuilder)
-	xr.method = http.MethodOptions
-	return xr
-}
-
-func NewTrace() *XRequestBuilder {
-	xr := _xReqBuilderPool.Get().(*XRequestBuilder)
-	xr.method = http.MethodTrace
-	return xr
-}
-
-func (xr *XRequestBuilder) WithContext(ctx context.Context) *XRequestBuilder {
-	xr.ctx = ctx
-	return xr
-}
-
-func (xr *XRequestBuilder) WithTimeout(d time.Duration) *XRequestBuilder {
-	xr.timeout = d
-	return xr
-}
-
-func (xr *XRequestBuilder) Header(header http.Header) *XRequestBuilder {
-	xr.header = header.Clone()
-	return xr
-}
-
-func (xr *XRequestBuilder) SetHeader(key, value string) *XRequestBuilder {
-	if xr.header == nil {
-		xr.header = make(http.Header)
-	}
-	xr.header.Set(key, value)
-	return xr
-}
-
-func (xr *XRequestBuilder) AddHeader(key, value string) *XRequestBuilder {
-	if xr.header == nil {
-		xr.header = make(http.Header)
-	}
-	xr.header.Add(key, value)
-	return xr
-}
-
-func (xr *XRequestBuilder) SetBasicAuth(username, password string) *XRequestBuilder {
-	return xr.SetHeader("Authorization", "Basic "+basicAuth(username, password))
-}
-
-func (xr *XRequestBuilder) Query(query urlpkg.Values) *XRequestBuilder {
-	xr.query = query
-	return xr
-}
-
-func (xr *XRequestBuilder) SetQuery(key, value string) *XRequestBuilder {
-	if xr.query == nil {
-		xr.query = make(urlpkg.Values)
-	}
-	xr.query.Set(key, value)
-	return xr
-}
-
-func (xr *XRequestBuilder) AddQuery(key, value string) *XRequestBuilder {
-	if xr.query == nil {
-		xr.query = make(urlpkg.Values)
-	}
-	xr.query.Add(key, value)
-	return xr
-}
-
-func (xr *XRequestBuilder) Path(elements ...string) *XRequestBuilder {
-	xr.pathElements = make([]string, 0, len(elements))
-	for _, s := range elements {
-		if s = strings.TrimSpace(s); s != "" {
-			xr.pathElements = append(xr.pathElements, s)
-		}
-	}
-	return xr
-}
-
-func (xr *XRequestBuilder) Body(body any) *XRequestBuilder {
-	xr.body.has = true
-	xr.body.v = body
-	return xr
-}
-
-func (xr *XRequestBuilder) build(bc BodyCodec) (req *http.Request, cancel context.CancelFunc, err error) {
-	defer xr.free()
-
-	if xr.method == "" {
-		panic("'XRequestBuilder' is not reusable")
+func (r *xRequestBuilder) build(enc Encoder, opts ...xRequestBuildOption) (req *http.Request, cancel context.CancelFunc, err error) {
+	for _, opt := range opts {
+		opt(r)
 	}
 
-	cancel = func() {}
-
-	u, err := xr.processingURL()
+	u, err := r.buildURL()
 	if err != nil {
-		return nil, cancel, fmt.Errorf("build url: %w", err)
+		return nil, nil, err
 	}
 
-	br, err := xr.processingBody(bc)
+	body, err := enc.Encode(r.m)
 	if err != nil {
-		return nil, cancel, fmt.Errorf("build body: %w", err)
+		return nil, nil, fmt.Errorf("encode: %w", err)
 	}
 
-	ctx := xr.ctx
-	switch {
-	case ctx == nil && xr.timeout <= 0:
-		req, err = http.NewRequest(xr.method, u.String(), br)
-	case ctx == nil && xr.timeout > 0:
-		ctx, cancel = context.WithTimeout(context.Background(), xr.timeout)
-		req, err = http.NewRequestWithContext(ctx, xr.method, u.String(), br)
-	case ctx != nil && xr.timeout <= 0:
-		req, err = http.NewRequestWithContext(ctx, xr.method, u.String(), br)
-	case ctx != nil && xr.timeout > 0:
-		ctx, cancel = context.WithTimeout(ctx, xr.timeout)
-		req, err = http.NewRequestWithContext(ctx, xr.method, u.String(), br)
-	}
-	if err != nil {
-		return nil, cancel, fmt.Errorf("build *http.Request: %w", err)
+	ctx := cmp.Or(r.ctx, context.Background())
+	if r.timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, r.timeout)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
 	}
 
-	for k, v := range xr.header {
-		req.Header[k] = append([]string{}, v...)
+	if req, err = http.NewRequestWithContext(ctx, r.method, u.String(), body); err != nil {
+		cancel()
+		return nil, nil, err
 	}
-	// req.Header = xr.header.Clone()
 
+	req.Header = r.m.h.header
 	return
 }
 
-func (xr *XRequestBuilder) processingURL() (u *urlpkg.URL, err error) {
-	switch {
-	case xr.baseURL == "" && len(xr.pathElements) == 0:
+func (r *xRequestBuilder) buildURL() (u *url.URL, err error) {
+	var elems []string
+	switch pl := len(r.path); {
+	case r.baseURL == "" && pl == 0:
 		return nil, errors.New("empty url")
-	case xr.baseURL == "" && len(xr.pathElements) == 1:
-		u, err = joinPath(xr.pathElements[0], nil)
-	case xr.baseURL == "" && len(xr.pathElements) >= 2:
-		u, err = joinPath(xr.pathElements[0], xr.pathElements[1:])
-	case xr.baseURL != "" && len(xr.pathElements) == 0:
-		u, err = joinPath(xr.baseURL, nil)
+
+	case r.baseURL == "" && pl == 1:
+		u, err = url.Parse(r.path[0])
+
+	case r.baseURL == "" && pl >= 2:
+		u, err = url.Parse(r.path[0])
+		elems = r.path[1:]
+
+	case pl == 0:
+		u, err = url.Parse(r.baseURL)
+
 	default:
-		// xr.baseURL != "" && len(xr.pathElements) >= 1
-		var ref *urlpkg.URL
-		if ref, err = urlpkg.Parse(xr.pathElements[0]); err != nil {
-			return nil, err
+		var tmp *url.URL
+		if tmp, err = url.Parse(r.path[0]); err != nil {
+			break
 		}
-		if ref.IsAbs() {
-			u = ref
-			u, err = joinPath(u.String(), xr.pathElements[1:])
-		} else {
-			u, err = joinPath(xr.baseURL, xr.pathElements)
+		if tmp.IsAbs() {
+			u = tmp
+			elems = r.path[1:]
+			break
 		}
+
+		u, err = url.Parse(r.baseURL)
+		elems = r.path
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	if len(xr.query) != 0 {
-		query, err := urlpkg.ParseQuery(u.RawQuery)
-		if err != nil {
-			return u, err
-		}
-		for k, vv := range xr.query {
-			query[k] = vv
-		}
-		u.RawQuery = query.Encode()
-	}
-
-	return
-}
-
-func (xr *XRequestBuilder) processingBody(bc BodyCodec) (r io.Reader, err error) {
-	if xr.body.has {
-		if r, err = bc.Encode(xr.body.v); err != nil {
+	var patch *url.URL
+	if len(elems) > 0 {
+		if patch, err = url.Parse(path.Join(elems...)); err != nil {
 			return nil, err
 		}
+		u = u.JoinPath(patch.EscapedPath())
 	}
 
-	if bh, ok := bc.(BodyHeaderContentLength); ok {
-		xr.SetHeader("Content-Length", strconv.Itoa(bh.ContentLength()))
-	}
-	if bh, ok := bc.(BodyHeaderContentType); ok {
-		xr.SetHeader("Content-Type", bh.ContentType())
-	}
-	if bh, ok := bc.(BodyHeaderContentEncoding); ok {
-		xr.SetHeader("Content-Encoding", bh.ContentEncoding())
-	}
-
-	if bh, ok := bc.(BodyHeaderAccept); ok {
-		xr.SetHeader("Accept", bh.Accept())
-	}
-	if bh, ok := bc.(BodyHeaderAcceptEncoding); ok {
-		xr.SetHeader("Accept-Encoding", bh.AcceptEncoding())
-	}
-
+	u.RawQuery, err = r.q.encode(u, patch)
 	return
 }
 
-func (xr *XRequestBuilder) free() {
-	xr.reset()
-	_xReqBuilderPool.Put(xr)
+func (r *xRequestBuilder) Context(ctx context.Context) RequestBuilder {
+	r.ctx = ctx
+	return r
 }
 
-func (xr *XRequestBuilder) reset() {
-	xr.ctx = nil
-	xr.timeout = 0
-	xr.method = ""
-	xr.baseURL = ""
-	xr.pathElements = nil
-	for k := range xr.header {
-		xr.header.Del(k)
+func (r *xRequestBuilder) Timeout(timeout time.Duration) RequestBuilder {
+	r.timeout = timeout
+	return r
+}
+
+func (r *xRequestBuilder) Path(elem ...string) RequestBuilder {
+	if l := len(elem); cap(r.path) < l {
+		r.path = make([]string, 0, l)
 	}
-	for k := range xr.query {
-		xr.query.Del(k)
-	}
-	xr.body.has = false
-	xr.body.v = nil
+	r.path = append(r.path, elem...)
+	return r
+}
+
+func (r *xRequestBuilder) Query(query url.Values) RequestBuilder {
+	r.q.Query(query)
+	return r
+}
+
+func (r *xRequestBuilder) QuerySet(key, value string) RequestBuilder {
+	r.q.QuerySet(key, value)
+	return r
+}
+
+func (r *xRequestBuilder) QueryAdd(key, value string) RequestBuilder {
+	r.q.QueryAdd(key, value)
+	return r
+}
+
+func (r *xRequestBuilder) Header(header http.Header) RequestBuilder {
+	r.m.Header(header)
+	return r
+}
+
+func (r *xRequestBuilder) HeaderSet(key, value string) RequestBuilder {
+	r.m.HeaderSet(key, value)
+	return r
+}
+
+func (r *xRequestBuilder) HeaderAdd(key, value string) RequestBuilder {
+	r.m.HeaderAdd(key, value)
+	return r
+}
+
+func (r *xRequestBuilder) HeaderSetBasicAuth(username, password string) RequestBuilder {
+	r.m.HeaderSetBasicAuth(username, password)
+	return r
+}
+
+func (r *xRequestBuilder) Body(body any) RequestBuilder {
+	r.m.hasBody, r.m.body = true, body
+	return r
 }

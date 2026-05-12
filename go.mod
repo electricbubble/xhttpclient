@@ -1,3 +1,3 @@
-module github.com/electricbubble/xhttpclient
+module github.com/electricbubble/xhttpclient/v2
 
-go 1.19
+go 1.25
